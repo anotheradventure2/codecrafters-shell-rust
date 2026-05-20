@@ -1,5 +1,6 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::{
     env,
     io::{self, Write},
@@ -36,19 +37,38 @@ fn main() {
                 "type" => {
                     if ["type", "echo", "exit"].contains(&v[1]) {
                         println!("{} is a shell builtin", v[1])
-                    } else if let Some(found) = path
-                        .iter()
-                        .find(|e| e.file_name().is_some_and(|f| f == v[1]))
-                    {
+                    } else if let Some(found) = is_executable(v[1]) {
                         println!("{} is {}", v[1], found.to_string_lossy())
                     } else {
                         println!("{}: not found", v[1])
                     }
                 }
-                _ => println!("{}: command not found", command.trim()),
+                _ => {
+                    if let Some(found) = is_executable(v[0]) {
+                        run(v[0], v[1..v.len()].to_vec())
+                    } else {
+                        println!("{}: command not found", command.trim())
+                    }
+                }
             }
         }
     }
+}
+
+fn run(program: &str, args: Vec<&str>) {
+    let _ = std::process::Command::new(program)
+        .args(args)
+        .spawn()
+        .expect("Failed to execute command")
+        .wait();
+}
+
+fn is_executable(name: &str) -> Option<PathBuf> {
+    env::var("PATH")
+        .unwrap()
+        .split(":")
+        .flat_map(get_executables)
+        .find(|e| e.file_name().is_some_and(|f| f == name))
 }
 
 fn get_executables(path: &str) -> Vec<PathBuf> {
