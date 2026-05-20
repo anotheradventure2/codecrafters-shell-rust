@@ -1,35 +1,68 @@
 [![progress-banner](https://backend.codecrafters.io/progress/shell/77edbf33-1214-4887-8567-c2bf0eea367c)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-This is a starting point for Rust solutions to the
+This is a Rust solution to the
 ["Build Your Own Shell" Challenge](https://app.codecrafters.io/courses/shell/overview).
 
-In this challenge, you'll build your own POSIX compliant shell that's capable of
-interpreting shell commands, running external programs and builtin commands like
-cd, pwd, echo and more. Along the way, you'll learn about shell command parsing,
-REPLs, builtin commands, and more.
+## Project Structure
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
-
-# Passing the first stage
-
-The entry point for your `shell` implementation is in `src/main.rs`. Study and
-uncomment the relevant code, then run the command below to execute the tests on
-our servers:
-
-```sh
-codecrafters submit
+```
+src/
+├── lib.rs       # Crate root — declares all modules
+├── main.rs      # Binary entry point — owns the REPL loop
+├── path.rs      # PATH scanning and executable lookup
+└── builtins.rs  # Shell builtin commands (type, echo, pwd, exit)
 ```
 
-Time to move on to the next stage!
+### Why `lib.rs` + `main.rs`?
 
-# Stage 2 & beyond
+This project uses the **library crate** pattern:
 
-Note: This section is for stages 2 and beyond.
+- **`lib.rs`** is the crate root. It declares `pub mod path;` and `pub mod builtins;`.
+  Because `lib.rs` is the root, every module can import every other module via `crate::`.
+- **`main.rs`** is a thin binary that imports the library (`use codecrafters_shell::...`)
+  and runs the REPL loop.
 
-1. Ensure you have `cargo (1.95)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main.rs`. This command compiles your Rust project, so it might be slow
-   the first time you run it. Subsequent runs will be fast.
-1. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+This is the idiomatic Rust way to structure a project with multiple modules — it lets
+modules cross-import each other and makes testing easier.
+
+### Module Responsibilities
+
+| Module | Purpose |
+|--------|---------|
+| `path.rs` | Scans `$PATH` directories for executable files. Provides `list_executables()` (builds the full list), `find_executable()` (looks up a command by name), and `get_executables()` (scans a single directory). |
+| `builtins.rs` | Handles shell builtin commands. `handle_type()` resolves whether a command is a builtin or external executable. `execute_command()` spawns external processes. |
+| `main.rs` | The REPL loop: prints `$`, reads input, splits into `[command, args]`, and dispatches via `match`. |
+| `lib.rs` | Crate root. Just declares the modules as public. |
+
+### How Cross-Imports Work
+
+Because `lib.rs` is the crate root, `crate::` refers to the library:
+
+```rust
+// builtins.rs can import path.rs
+use crate::path;
+
+// main.rs imports the library by crate name
+use codecrafters_shell::builtins;
+use codecrafters_shell::path;
+```
+
+### Key Design Decisions
+
+- **PATH is built once** at startup (`list_executables()`), not on every command.
+- **`find_executable` uses a lifetime** (`'a`) to return a borrowed `&PathBuf` — no unnecessary cloning.
+- **`get_executables` handles missing directories gracefully** — `.into_iter().flatten()` skips non-existent directories instead of panicking.
+- **`splitn(2, ' ')`** splits input into at most 2 parts: the command and the rest of the arguments.
+
+## Running
+
+```sh
+# Run the shell locally
+cargo run
+
+# Clippy
+cargo clippy
+
+# Submit to CodeCrafters
+codecrafters submit
+```

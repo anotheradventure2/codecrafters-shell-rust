@@ -1,12 +1,11 @@
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::{
-    env,
-    io::{self, Write},
-    path::Path,
-};
+use codecrafters_shell::builtins;
+use codecrafters_shell::path;
+use std::env::current_dir;
+use std::io::{self, Write};
 
 fn main() {
+    let executables = path::list_executables();
+
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -14,72 +13,18 @@ fn main() {
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
 
-        let command = input.trim();
-        if !command.contains(" ") {
-            // commands with no args
-            match command {
-                "exit" => break,
-                "pwd" => println!("{}", env::current_dir().unwrap().display()),
-                _ => println!("{}: command not found", command.trim()),
-            }
-        } else {
-            // commands with args
-            let v: Vec<&str> = command.split(" ").collect();
+        // split into [cmd, rest]
+        let parts: Vec<&str> = input.trim().splitn(2, " ").collect();
 
-            match v[0] {
-                "echo" => println!("{}", v[1..v.len()].join(" ")),
-                "type" => {
-                    if ["type", "pwd", "echo", "exit"].contains(&v[1]) {
-                        println!("{} is a shell builtin", v[1])
-                    } else if let Some(found) = is_executable(v[1]) {
-                        println!("{} is {}", v[1], found.to_string_lossy())
-                    } else {
-                        println!("{}: not found", v[1])
-                    }
-                }
-                _ => {
-                    if is_executable(v[0]).is_some() {
-                        run(v[0], v[1..v.len()].to_vec())
-                    } else {
-                        println!("{}: command not found", command.trim())
-                    }
-                }
+        match parts.as_slice() {
+            ["exit"] => break,
+            ["pwd"] => println!("{}", current_dir().unwrap().display()),
+            ["echo", args] => println!("{}", args),
+            ["type", name] => builtins::handle_type(name, &executables),
+            [cmd, args] if path::find_executable(cmd, &executables).is_some() => {
+                builtins::execute_command(cmd, args.split(' ').collect())
             }
+            _ => println!("{}: command not found", parts[0]),
         }
     }
-}
-
-fn run(program: &str, args: Vec<&str>) {
-    let _ = std::process::Command::new(program)
-        .args(args)
-        .spawn()
-        .expect("Failed to execute command")
-        .wait();
-}
-
-fn is_executable(name: &str) -> Option<PathBuf> {
-    env::var("PATH")
-        .unwrap()
-        .split(":")
-        .flat_map(get_executables)
-        .find(|e| e.file_name().is_some_and(|f| f == name))
-}
-
-fn get_executables(path: &str) -> Vec<PathBuf> {
-    Path::new(path)
-        .read_dir()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let full_path = e.path();
-            if full_path.is_file()
-                && full_path.metadata().unwrap().permissions().mode() & 0o111 != 0
-            {
-                Some(full_path)
-            } else {
-                None
-            }
-        })
-        .collect()
 }
