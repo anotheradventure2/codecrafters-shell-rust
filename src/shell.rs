@@ -72,7 +72,7 @@ impl Shell {
                 prev_was_escape = true;
             } else if c == '"' {
                 in_double_quotes = !in_double_quotes;
-            } else if c == '\'' {
+            } else if c == '\'' && !in_double_quotes {
                 in_quotes = !in_quotes
             } else if c == ' ' && !in_quotes && !in_double_quotes {
                 if !current_arg.is_empty() {
