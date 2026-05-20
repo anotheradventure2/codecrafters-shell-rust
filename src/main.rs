@@ -1,6 +1,18 @@
-use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::{
+    env,
+    io::{self, Write},
+    path::Path,
+};
 
 fn main() {
+    let path: Vec<PathBuf> = env::var("PATH")
+        .unwrap()
+        .split(":")
+        .flat_map(get_executables)
+        .collect();
+
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -24,6 +36,11 @@ fn main() {
                 "type" => {
                     if ["type", "echo", "exit"].contains(&v[1]) {
                         println!("{} is a shell builtin", v[1])
+                    } else if let Some(found) = path
+                        .iter()
+                        .find(|e| e.file_name().is_some_and(|f| f == v[1]))
+                    {
+                        println!("{} is {}", v[1], found.to_string_lossy())
                     } else {
                         println!("{}: not found", v[1])
                     }
@@ -31,22 +48,24 @@ fn main() {
                 _ => println!("{}: command not found", command.trim()),
             }
         }
-
-        // if command == "exit" {
-        //     break;
-        // } else if is_builtin(command) {
-        //     println!("{}", )
-        // } else if command.starts_with("echo ") {
-        //     let (_, args) = command.split_once(" ").unwrap();
-        //     println!("{}", args)
-        // } else {
-        //     println!("{}: command not found", command.trim());
-        // }
     }
 }
 
-// fn is_builtin(command: &str) -> bool {
-//     let foo = ["type", "echo", "exit"]
-//     return ["type", "echo", "exit"].iter().any(|&x| x == command.to_string().trim())
-//     return ["type", "echo", "exit"].contains(&command)
-// }
+fn get_executables(path: &str) -> Vec<PathBuf> {
+    Path::new(path)
+        .read_dir()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let full_path = e.path();
+            if full_path.is_file()
+                && full_path.metadata().unwrap().permissions().mode() & 0o111 != 0
+            {
+                Some(full_path)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
