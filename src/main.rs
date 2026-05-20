@@ -29,7 +29,7 @@ fn main() {
             match v[0] {
                 "echo" => println!("{}", v[1..v.len()].join(" ")),
                 "type" => {
-                    if ["type", "echo", "exit"].contains(&v[1]) {
+                    if ["type", "pwd", "echo", "exit"].contains(&v[1]) {
                         println!("{} is a shell builtin", v[1])
                     } else if let Some(found) = is_executable(v[1]) {
                         println!("{} is {}", v[1], found.to_string_lossy())
