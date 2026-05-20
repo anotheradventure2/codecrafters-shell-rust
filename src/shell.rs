@@ -39,8 +39,6 @@ impl Shell {
         let parts: Vec<String> = self.parse_input(&input);
         let parts: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
 
-        println!("{}", parts.join(" "));
-
         match parts.as_slice() {
             ["exit"] => Command::Exit,
             ["pwd"] => Command::Pwd,
