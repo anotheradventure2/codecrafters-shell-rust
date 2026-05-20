@@ -62,18 +62,32 @@ impl Shell {
         let mut in_quotes = false;
         let mut current_arg = String::new();
         let mut args = Vec::new();
+        let mut prev_was_escape = false;
 
         for c in input.chars() {
-            match c {
-                '\"' => in_double_quotes = !in_double_quotes,
-                '\'' if !in_double_quotes => in_quotes = !in_quotes,
-                ' ' if !in_quotes && !in_double_quotes => {
-                    if !current_arg.is_empty() {
-                        args.push(current_arg);
-                        current_arg = String::new();
-                    }
+            if prev_was_escape {
+                let escaped = match c {
+                    'n' => '\n',
+                    't' => '\t',
+                    '\\' => '\\',
+                    '\'' => '\'',
+                    _ => c,
+                };
+                current_arg.push(escaped);
+                prev_was_escape = false;
+            } else if c == '\\' {
+                prev_was_escape = true;
+            } else if c == '"' {
+                in_double_quotes = !in_double_quotes;
+            } else if c == '\'' {
+                in_quotes = !in_quotes
+            } else if c == ' ' && !in_quotes && !in_double_quotes {
+                if !current_arg.is_empty() {
+                    args.push(current_arg);
+                    current_arg = String::new();
                 }
-                _ => current_arg.push(c),
+            } else {
+                current_arg.push(c);
             }
         }
 
