@@ -1,12 +1,14 @@
 use crate::path;
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 pub struct Shell {
     executables: Vec<PathBuf>,
-    current_dir: PathBuf,
 }
 
-pub enum Command {
+enum Command {
     Empty,
     Unknown(String),
     Exit,
@@ -14,18 +16,19 @@ pub enum Command {
     Cd(String),
     Echo(String),
     Type(String),
-    External(String, Vec<String>),
+    External(PathBuf, Vec<String>),
+}
+
+impl Default for Shell {
+    fn default() -> Self {
+        Shell {
+            executables: path::list_executables(),
+        }
+    }
 }
 
 impl Shell {
-    const BUILTINS: [&str; 4] = ["type", "pwd", "echo", "exit"];
-
-    pub fn new() -> Self {
-        Shell {
-            executables: path::list_executables(),
-            current_dir: std::env::current_dir().unwrap(),
-        }
-    }
+    const BUILTINS: [&str; 5] = ["type", "pwd", "echo", "exit", "cd"];
 
     pub fn handle_input(&mut self, input: &str) {
         let command = self.parse(input.trim());
@@ -41,10 +44,23 @@ impl Shell {
             ["echo", args] => Command::Echo(args.to_string()),
             ["cd", path] => Command::Cd(path.to_string()),
             ["type", name] => Command::Type(name.to_string()),
-            [cmd, args] if self.find_executable(cmd).is_some() => Command::External(
-                cmd.to_string(),
-                args.split(' ').map(|s| s.to_string()).collect(),
-            ),
+            [cmd] => {
+                if let Some(full_path) = self.find_executable(cmd) {
+                    Command::External(full_path.clone(), Vec::new())
+                } else {
+                    Command::Unknown(cmd.to_string())
+                }
+            }
+            [cmd, args] => {
+                if let Some(full_path) = self.find_executable(cmd) {
+                    Command::External(
+                        full_path.clone(),
+                        args.split(' ').map(|s| s.to_string()).collect(),
+                    )
+                } else {
+                    Command::Unknown(cmd.to_string())
+                }
+            }
             [] => Command::Empty,
             [name, ..] => Command::Unknown(name.to_string()),
         }
@@ -53,19 +69,22 @@ impl Shell {
     fn execute(&mut self, cmd: Command) {
         match cmd {
             Command::Exit => std::process::exit(0),
-            Command::Pwd => println!("{}", self.current_dir.display()),
+            Command::Pwd => println!("{}", env::current_dir().unwrap().display()),
             Command::Echo(args) => println!("{}", args),
             Command::Type(name) => self.handle_type(name.as_str()),
             Command::Cd(path) => {
-                let p = Path::new(&path);
-                if p.is_dir() {
-                    self.current_dir = p.to_path_buf()
+                let target_path = if path.starts_with('/') || path.starts_with('~') {
+                    Path::new(&path).to_path_buf()
                 } else {
-                    println!("cd: {}: No such file or directory", path);
+                    env::current_dir().unwrap().join(path)
+                };
+
+                if target_path.is_dir() {
+                    env::set_current_dir(target_path.as_path()).expect("failed to set path");
+                } else {
+                    println!("cd: {}: No such file or directory", target_path.display());
                 }
             }
-            Command::Empty => {}
-            Command::Unknown(cmd) => println!("{}: command not found", cmd),
             Command::External(program, args) => {
                 std::process::Command::new(program)
                     .args(args)
@@ -74,6 +93,8 @@ impl Shell {
                     .wait()
                     .expect("failed to wait for command");
             }
+            Command::Empty => {}
+            Command::Unknown(cmd) => println!("{}: command not found", cmd),
         }
     }
 
