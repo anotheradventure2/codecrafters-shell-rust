@@ -1,4 +1,8 @@
-use std::{env, os::unix::fs::PermissionsExt, path::{Path, PathBuf}};
+use std::{
+    env,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 pub fn list_executables() -> Vec<PathBuf> {
     env::var("PATH")
@@ -6,12 +10,6 @@ pub fn list_executables() -> Vec<PathBuf> {
         .split(':')
         .flat_map(get_executables)
         .collect()
-}
-
-// Find executable by name - returns None if not found
-pub fn find_executable<'a>(name: &str, path: &'a [PathBuf]) -> Option<&'a PathBuf> {
-    path.iter()
-        .find(|p| p.file_name().map(|f| f == name).unwrap_or(false))
 }
 
 fn get_executables(dir: &str) -> Vec<PathBuf> {
@@ -23,7 +21,10 @@ fn get_executables(dir: &str) -> Vec<PathBuf> {
         .filter_map(|e| {
             let full_path = e.path();
             if full_path.is_file()
-                && full_path.metadata().unwrap().permissions().mode() & 0o111 != 0
+                && full_path
+                    .metadata()
+                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
             {
                 Some(full_path)
             } else {
