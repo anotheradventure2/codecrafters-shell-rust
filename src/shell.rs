@@ -68,7 +68,7 @@ impl Shell {
             if prev_was_escape {
                 current_arg.push(c);
                 prev_was_escape = false;
-            } else if c == '\\' {
+            } else if c == '\\' && !in_quotes {
                 prev_was_escape = true;
             } else if c == '"' {
                 in_double_quotes = !in_double_quotes;
