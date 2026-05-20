@@ -86,6 +86,7 @@ impl Shell {
                 }
             }
             Command::External(program, args) => {
+                println!("{}: {}", program.display(), args.join("."));
                 std::process::Command::new(program)
                     .args(args)
                     .spawn()
