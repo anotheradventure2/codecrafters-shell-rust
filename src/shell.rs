@@ -58,14 +58,16 @@ impl Shell {
     }
 
     fn parse_input(&self, input: &str) -> Vec<String> {
+        let mut in_double_quotes = false;
         let mut in_quotes = false;
         let mut current_arg = String::new();
         let mut args = Vec::new();
 
         for c in input.chars() {
             match c {
-                '\'' => in_quotes = !in_quotes,
-                ' ' if !in_quotes => {
+                '\"' => in_double_quotes = !in_double_quotes,
+                '\'' if !in_double_quotes => in_quotes = !in_quotes,
+                ' ' if !in_quotes && !in_double_quotes => {
                     if !current_arg.is_empty() {
                         args.push(current_arg);
                         current_arg = String::new();
