@@ -66,14 +66,7 @@ impl Shell {
 
         for c in input.chars() {
             if prev_was_escape {
-                let escaped = match c {
-                    'n' => '\n',
-                    't' => '\t',
-                    '\\' => '\\',
-                    '\'' => '\'',
-                    _ => c,
-                };
-                current_arg.push(escaped);
+                current_arg.push(c);
                 prev_was_escape = false;
             } else if c == '\\' {
                 prev_was_escape = true;
