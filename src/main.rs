@@ -2,7 +2,7 @@ use codecrafters_shell::shell::Shell;
 use std::io::{self, Write};
 
 fn main() {
-    let shell = Shell::new();
+    let mut shell = Shell::new();
 
     loop {
         print!("$ ");

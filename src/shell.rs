@@ -1,5 +1,5 @@
 use crate::path;
-use std::{env::current_dir, path::PathBuf};
+use std::path::{Path, PathBuf};
 
 pub struct Shell {
     executables: Vec<PathBuf>,
@@ -11,6 +11,7 @@ pub enum Command {
     Unknown(String),
     Exit,
     Pwd,
+    Cd(String),
     Echo(String),
     Type(String),
     External(String, Vec<String>),
@@ -26,7 +27,7 @@ impl Shell {
         }
     }
 
-    pub fn handle_input(&self, input: &str) {
+    pub fn handle_input(&mut self, input: &str) {
         let command = self.parse(input.trim());
         self.execute(command);
     }
@@ -38,7 +39,7 @@ impl Shell {
             ["exit"] => Command::Exit,
             ["pwd"] => Command::Pwd,
             ["echo", args] => Command::Echo(args.to_string()),
-            ["type"] => Command::Type(String::new()),
+            ["cd", path] => Command::Cd(path.to_string()),
             ["type", name] => Command::Type(name.to_string()),
             [cmd, args] if self.find_executable(cmd).is_some() => Command::External(
                 cmd.to_string(),
@@ -49,12 +50,20 @@ impl Shell {
         }
     }
 
-    fn execute(&self, cmd: Command) {
+    fn execute(&mut self, cmd: Command) {
         match cmd {
             Command::Exit => std::process::exit(0),
             Command::Pwd => println!("{}", self.current_dir.display()),
             Command::Echo(args) => println!("{}", args),
             Command::Type(name) => self.handle_type(name.as_str()),
+            Command::Cd(path) => {
+                let p = Path::new(&path);
+                if p.is_dir() {
+                    self.current_dir = p.to_path_buf()
+                } else {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
             Command::Empty => {}
             Command::Unknown(cmd) => println!("{}: command not found", cmd),
             Command::External(program, args) => {
