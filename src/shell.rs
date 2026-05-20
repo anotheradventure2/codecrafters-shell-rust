@@ -48,9 +48,9 @@ impl Shell {
             [cmd] if self.find_executable(cmd).is_some() => {
                 Command::External(cmd.to_string(), Vec::new())
             }
-            [cmd, args] if self.find_executable(cmd).is_some() => Command::External(
+            [cmd, args @ ..] if self.find_executable(cmd).is_some() => Command::External(
                 cmd.to_string(),
-                args.split(' ').map(|s| s.to_string()).collect(),
+                args.iter().map(|e| e.to_string()).collect(),
             ),
             [] => Command::Empty,
             [name, ..] => Command::Unknown(name.to_string()),
