@@ -70,7 +70,7 @@ impl Shell {
                 prev_was_escape = false;
             } else if c == '\\' && !in_quotes {
                 prev_was_escape = true;
-            } else if c == '"' {
+            } else if c == '"' && !in_double_quotes {
                 in_double_quotes = !in_double_quotes;
             } else if c == '\'' && !in_double_quotes {
                 in_quotes = !in_quotes
