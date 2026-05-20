@@ -16,7 +16,7 @@ enum Command {
     Cd(String),
     Echo(String),
     Type(String),
-    External(PathBuf, Vec<String>),
+    External(String, Vec<String>),
 }
 
 impl Default for Shell {
@@ -46,7 +46,7 @@ impl Shell {
             ["type", name] => Command::Type(name.to_string()),
             [cmd] => {
                 if let Some(full_path) = self.find_executable(cmd) {
-                    Command::External(full_path.clone(), Vec::new())
+                    Command::External(cmd.to_string(), Vec::new())
                 } else {
                     Command::Unknown(cmd.to_string())
                 }
@@ -54,7 +54,7 @@ impl Shell {
             [cmd, args] => {
                 if let Some(full_path) = self.find_executable(cmd) {
                     Command::External(
-                        full_path.clone(),
+                        cmd.to_string(),
                         args.split(' ').map(|s| s.to_string()).collect(),
                     )
                 } else {
@@ -86,7 +86,6 @@ impl Shell {
                 }
             }
             Command::External(program, args) => {
-                println!("{}: {}", program.display(), args.join("."));
                 std::process::Command::new(program)
                     .args(args)
                     .spawn()
