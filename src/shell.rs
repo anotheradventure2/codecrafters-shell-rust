@@ -36,34 +36,52 @@ impl Shell {
     }
 
     fn parse(&self, input: &str) -> Command {
-        let parts: Vec<&str> = input.trim().splitn(2, ' ').collect();
+        let parts: Vec<String> = self.parse_input(&input);
+        let parts: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+
+        println!("{}", parts.join(" "));
 
         match parts.as_slice() {
             ["exit"] => Command::Exit,
             ["pwd"] => Command::Pwd,
-            ["echo", args] => Command::Echo(args.to_string()),
+            ["echo", args @ ..] => Command::Echo(args.join(" ")),
             ["cd", path] => Command::Cd(path.to_string()),
             ["type", name] => Command::Type(name.to_string()),
-            [cmd] => {
-                if self.find_executable(cmd).is_some() {
-                    Command::External(cmd.to_string(), Vec::new())
-                } else {
-                    Command::Unknown(cmd.to_string())
-                }
+            [cmd] if self.find_executable(cmd).is_some() => {
+                Command::External(cmd.to_string(), Vec::new())
             }
-            [cmd, args] => {
-                if self.find_executable(cmd).is_some() {
-                    Command::External(
-                        cmd.to_string(),
-                        args.split(' ').map(|s| s.to_string()).collect(),
-                    )
-                } else {
-                    Command::Unknown(cmd.to_string())
-                }
-            }
+            [cmd, args] if self.find_executable(cmd).is_some() => Command::External(
+                cmd.to_string(),
+                args.split(' ').map(|s| s.to_string()).collect(),
+            ),
             [] => Command::Empty,
             [name, ..] => Command::Unknown(name.to_string()),
         }
+    }
+
+    fn parse_input(&self, input: &str) -> Vec<String> {
+        let mut in_quotes = false;
+        let mut current_arg = String::new();
+        let mut args = Vec::new();
+
+        for c in input.chars() {
+            match c {
+                '\'' => in_quotes = !in_quotes,
+                ' ' if !in_quotes => {
+                    if !current_arg.is_empty() {
+                        args.push(current_arg);
+                        current_arg = String::new();
+                    }
+                }
+                _ => current_arg.push(c),
+            }
+        }
+
+        if !current_arg.is_empty() {
+            args.push(current_arg);
+        }
+
+        args
     }
 
     fn execute(&mut self, cmd: Command) {
