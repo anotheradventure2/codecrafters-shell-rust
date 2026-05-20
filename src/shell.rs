@@ -45,14 +45,14 @@ impl Shell {
             ["cd", path] => Command::Cd(path.to_string()),
             ["type", name] => Command::Type(name.to_string()),
             [cmd] => {
-                if let Some(full_path) = self.find_executable(cmd) {
+                if self.find_executable(cmd).is_some() {
                     Command::External(cmd.to_string(), Vec::new())
                 } else {
                     Command::Unknown(cmd.to_string())
                 }
             }
             [cmd, args] => {
-                if let Some(full_path) = self.find_executable(cmd) {
+                if self.find_executable(cmd).is_some() {
                     Command::External(
                         cmd.to_string(),
                         args.split(' ').map(|s| s.to_string()).collect(),
@@ -73,8 +73,11 @@ impl Shell {
             Command::Echo(args) => println!("{}", args),
             Command::Type(name) => self.handle_type(name.as_str()),
             Command::Cd(path) => {
-                let target_path = if path.starts_with('/') || path.starts_with('~') {
+                let target_path = if path.starts_with('/') {
                     Path::new(&path).to_path_buf()
+                } else if path.starts_with('~') {
+                    let a = env::var("HOME").unwrap();
+                    Path::new(&a).to_path_buf()
                 } else {
                     env::current_dir().unwrap().join(path)
                 };
