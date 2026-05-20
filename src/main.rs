@@ -1,6 +1,5 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::{
     env,
     io::{self, Write},
@@ -8,12 +7,6 @@ use std::{
 };
 
 fn main() {
-    let path: Vec<PathBuf> = env::var("PATH")
-        .unwrap()
-        .split(":")
-        .flat_map(get_executables)
-        .collect();
-
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -26,6 +19,7 @@ fn main() {
             // commands with no args
             match command {
                 "exit" => break,
+                "pwd" => println!("{}", env::current_dir().unwrap().display()),
                 _ => println!("{}: command not found", command.trim()),
             }
         } else {
@@ -44,7 +38,7 @@ fn main() {
                     }
                 }
                 _ => {
-                    if let Some(found) = is_executable(v[0]) {
+                    if is_executable(v[0]).is_some() {
                         run(v[0], v[1..v.len()].to_vec())
                     } else {
                         println!("{}: command not found", command.trim())
