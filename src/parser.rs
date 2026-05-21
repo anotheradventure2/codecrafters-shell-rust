@@ -25,42 +25,43 @@ pub enum Token {
 
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
-    let mut input_chars = input.trim().chars().peekable();
-    let mut current_word = String::new();
-    while let Some(&c) = input_chars.peek() {
+    let mut chars = input.trim().chars().peekable();
+    let mut word = String::new();
+    while let Some(&c) = chars.peek() {
         match c {
             ' ' => {
-                input_chars.next(); // skip space
-                finish_word(&mut tokens, &mut current_word);
+                chars.next(); // skip space
+                finish_word(&mut tokens, &mut word);
             }
             '\'' => {
-                input_chars.next(); // skip opening '
-                read_until(&mut input_chars, &mut current_word, '\'');
+                chars.next(); // skip opening '
+                read_until(&mut chars, &mut word, '\'', false);
             }
             '"' => {
-                input_chars.next(); // skip opening "
-                read_double_quoted(&mut input_chars, &mut current_word);
+                chars.next(); // skip opening "
+                read_until(&mut chars, &mut word, '"', true);
             }
             '\\' => {
-                input_chars.next();
-                if let Some(&esc) = input_chars.peek() {
-                    input_chars.next();
-                    current_word.push(esc);
+                chars.next();
+                if let Some(&esc) = chars.peek() {
+                    chars.next();
+                    word.push(esc);
                 }
             }
             _ => {
-                input_chars.next();
-                current_word.push(c);
+                chars.next();
+                word.push(c);
             }
         }
     }
-    finish_word(&mut tokens, &mut current_word);
+    finish_word(&mut tokens, &mut word);
     tokens
 }
 
 pub fn parse(input: &str) -> Command {
     let tokens = tokenize(input);
     debug!(&tokens);
+
     if tokens.is_empty() {
         return Command::Empty;
     }
@@ -71,19 +72,11 @@ pub fn parse(input: &str) -> Command {
         _ => return Command::Empty,
     };
 
-    // ── Builtins ──
     match cmd_name {
         "exit" => return Command::Exit,
         "pwd" => return Command::Pwd,
         "echo" => {
-            let args: Vec<String> = rest
-                .iter()
-                .filter_map(|t| match t {
-                    Token::Word(w) => Some(w.clone()),
-                    _ => None,
-                })
-                .collect();
-            return Command::Echo(args.join(" "));
+            return Command::Echo(words_from_tokens(&tokens).join(" "));
         }
         "cd" => {
             return match rest.first() {
@@ -98,17 +91,19 @@ pub fn parse(input: &str) -> Command {
             };
         }
         _ => {
-            return Command::External(
-                cmd_name.to_string(),
-                rest.iter()
-                    .filter_map(|t| match t {
-                        Token::Word(w) => Some(w.to_string()),
-                        _ => None,
-                    })
-                    .collect(),
-            );
+            return Command::External(cmd_name.to_string(), words_from_tokens(&tokens));
         }
     }
+}
+
+fn words_from_tokens(tokens: &[Token]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|t| match t {
+            Token::Word(w) => Some(w.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn finish_word(tokens: &mut Vec<Token>, word: &mut String) {
@@ -117,23 +112,13 @@ fn finish_word(tokens: &mut Vec<Token>, word: &mut String) {
     }
 }
 
-fn read_until(chars: &mut Peekable<Chars>, word: &mut String, end: char) {
+fn read_until(chars: &mut Peekable<Chars>, word: &mut String, end: char, allow_escapes: bool) {
     while let Some(&ch) = chars.peek() {
         chars.next();
         if ch == end {
             break;
         }
-        word.push(ch);
-    }
-}
-
-fn read_double_quoted(chars: &mut Peekable<Chars>, word: &mut String) {
-    while let Some(&ch) = chars.peek() {
-        chars.next();
-        if ch == '"' {
-            break;
-        }
-        if ch == '\\' {
+        if allow_escapes && ch == '\\' {
             if let Some(&esc) = chars.peek() {
                 chars.next();
                 word.push(esc);

@@ -33,7 +33,7 @@ impl Shell {
             Command::Exit => std::process::exit(0),
             Command::Pwd => println!("{}", env::current_dir().unwrap().display()),
             Command::Echo(args) => println!("{}", args),
-            Command::Type(name) => self.handle_type(name.as_str()),
+            Command::Type(name) => self.handle_type(name),
             Command::Cd(path) => {
                 let target = self.resolve_path(&path);
 
