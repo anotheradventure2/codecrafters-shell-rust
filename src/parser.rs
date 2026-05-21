@@ -21,13 +21,21 @@ pub enum Command {
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Word(String), // regular word or quoted string
-    Redirect(String),
-    RedirectAppend(String),
+    RedirectStdout,
+    RedirectStderr,
+    RedirectAppendStdout,
+    RedirectAppendStderr,
 }
 
 impl Token {
     fn is_redirect(&self) -> bool {
-        matches!(self, Token::Redirect(_) | Token::RedirectAppend(_))
+        matches!(
+            self,
+            Token::RedirectStdout
+                | Token::RedirectStderr
+                | Token::RedirectAppendStdout
+                | Token::RedirectAppendStderr
+        )
     }
 }
 
@@ -62,9 +70,17 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
                 if (chars.next_if_eq(&'>')).is_some() {
                     if (chars.next_if_eq(&'>')).is_some() {
-                        tokens.push(Token::RedirectAppend(fd.to_string()));
+                        tokens.push(if fd == '1' {
+                            Token::RedirectAppendStdout
+                        } else {
+                            Token::RedirectAppendStderr
+                        });
                     } else {
-                        tokens.push(Token::Redirect(fd.to_string()));
+                        tokens.push(if fd == '1' {
+                            Token::RedirectStdout
+                        } else {
+                            Token::RedirectStderr
+                        });
                     }
                 } else {
                     chars.next();
@@ -75,9 +91,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 chars.next();
 
                 if (chars.next_if_eq(&'>')).is_some() {
-                    tokens.push(Token::RedirectAppend("1".to_string()));
+                    tokens.push(Token::RedirectAppendStdout);
                 } else {
-                    tokens.push(Token::Redirect("1".to_string()));
+                    tokens.push(Token::RedirectStdout);
                 }
             }
             _ => {
@@ -134,13 +150,13 @@ pub fn parse(input: &str) -> Command {
             });
 
             let (redirect_stdout, redirect_stderr) = match redirect {
-                Some(Token::Redirect(fd)) | Some(Token::RedirectAppend(fd)) => {
-                    let append = matches!(redirect, Some(Token::RedirectAppend(_)));
-                    match fd.as_str() {
-                        "1" => (filename.map(|f| (f, append)), None),
-                        "2" => (None, filename.map(|f| (f, append))),
-                        _ => return Command::InvalidArgs(input.to_string()),
-                    }
+                Some(Token::RedirectStdout) | Some(Token::RedirectAppendStdout) => {
+                    let append = matches!(redirect, Some(Token::RedirectAppendStdout));
+                    (filename.map(|f| (f, append)), None)
+                }
+                Some(Token::RedirectStderr) | Some(Token::RedirectAppendStderr) => {
+                    let append = matches!(redirect, Some(Token::RedirectAppendStderr));
+                    (None, filename.map(|f| (f, append)))
                 }
                 Some(_) => return Command::InvalidArgs(input.to_string()),
                 None => (None, None),
@@ -339,32 +355,28 @@ mod tests {
     fn test_redirect_stdout() {
         assert_tokens(
             "echo > file",
-            vec![w!("echo"), Token::Redirect("1".to_string()), w!("file")],
+            vec![w!("echo"), Token::RedirectStdout, w!("file")],
         );
     }
     #[test]
     fn test_redirect_append() {
         assert_tokens(
             "echo >> file",
-            vec![
-                w!("echo"),
-                Token::RedirectAppend("1".to_string()),
-                w!("file"),
-            ],
+            vec![w!("echo"), Token::RedirectAppendStdout, w!("file")],
         );
     }
     #[test]
     fn test_redirect_stderr() {
         assert_tokens(
             "echo 2> file",
-            vec![w!("echo"), Token::Redirect("2".to_string()), w!("file")],
+            vec![w!("echo"), Token::RedirectStderr, w!("file")],
         );
     }
     #[test]
     fn test_redirect_stdout_fd1() {
         assert_tokens(
             "echo 1> file",
-            vec![w!("echo"), Token::Redirect("1".to_string()), w!("file")],
+            vec![w!("echo"), Token::RedirectStdout, w!("file")],
         );
     }
 }
