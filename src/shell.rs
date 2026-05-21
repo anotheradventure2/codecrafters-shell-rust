@@ -43,19 +43,14 @@ impl Shell {
                     println!("cd: {}: No such file or directory", target.display());
                 }
             }
-            Command::External(program, args) => match self.find_executable(program.as_str()) {
-                Some(_) => {
-                    std::process::Command::new(program)
-                        .args(args)
-                        .spawn()
-                        .expect("Failed to execute command")
-                        .wait()
-                        .expect("failed to wait for command");
-                }
-                None => {
-                    println!("{}: command not found", program);
-                }
-            },
+            Command::External { program, args, .. } => {
+                std::process::Command::new(program)
+                    .args(args)
+                    .spawn()
+                    .expect("Failed to execute command")
+                    .wait()
+                    .expect("failed to wait for command");
+            }
             Command::Empty => {}
             Command::InvalidArgs(input) => println!("{} invalid arguments", input),
             Command::Unknown(cmd) => println!("{}: command not found", cmd),
