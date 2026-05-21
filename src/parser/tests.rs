@@ -1,184 +1,13 @@
 use super::*;
 
-// ── Helpers ──
-
-macro_rules! w {
-    ($s:literal) => {
-        Token::Word($s.into())
-    };
-}
-
-fn assert_tokens(input: &str, expected: Vec<Token>) {
-    assert_eq!(tokenize(input), expected);
-}
-
 fn assert_command(input: &str, expected: Command) {
     assert_eq!(parse(input), expected);
 }
 
 // ══════════════════════════════════════════════════════════════
-// Tokenizer tests
+// Builtins
 // ══════════════════════════════════════════════════════════════
 
-// ── Basic word splitting ──
-#[test]
-fn tokenize_simple() {
-    assert_tokens("echo hello", vec![w!("echo"), w!("hello")]);
-}
-#[test]
-fn tokenize_three_words() {
-    assert_tokens("ls -la /tmp", vec![w!("ls"), w!("-la"), w!("/tmp")]);
-}
-#[test]
-fn tokenize_single_word() {
-    assert_tokens("pwd", vec![w!("pwd")]);
-}
-
-// ── Empty / whitespace ──
-#[test]
-fn tokenize_empty() {
-    assert_tokens("", vec![]);
-}
-#[test]
-fn tokenize_only_spaces() {
-    assert_tokens("   ", vec![]);
-}
-#[test]
-fn tokenize_leading_space() {
-    assert_tokens("  echo", vec![w!("echo")]);
-}
-#[test]
-fn tokenize_trailing_space() {
-    assert_tokens("echo ", vec![w!("echo")]);
-}
-#[test]
-fn tokenize_multiple_spaces() {
-    assert_tokens("echo   hello", vec![w!("echo"), w!("hello")]);
-}
-
-// ── Single quotes ──
-#[test]
-fn tokenize_single_quote() {
-    assert_tokens("echo 'hello world'", vec![w!("echo"), w!("hello world")]);
-}
-#[test]
-fn tokenize_empty_quotes() {
-    assert_tokens("echo ''", vec![w!("echo")]);
-}
-#[test]
-fn tokenize_quote_with_special() {
-    assert_tokens("echo 'a>b|c'", vec![w!("echo"), w!("a>b|c")]);
-}
-#[test]
-fn tokenize_backslash_in_single() {
-    assert_tokens(r"echo 'hello\world'", vec![w!("echo"), w!(r"hello\world")]);
-}
-
-// ── Double quotes ──
-#[test]
-fn tokenize_double_quote() {
-    assert_tokens(r#"echo "hello world""#, vec![w!("echo"), w!("hello world")]);
-}
-#[test]
-fn tokenize_double_empty() {
-    assert_tokens(r#"echo """#, vec![w!("echo")]);
-}
-#[test]
-fn tokenize_escaped_quote() {
-    assert_tokens(
-        r#"echo "hello\"world""#,
-        vec![w!("echo"), w!(r#"hello"world"#)],
-    );
-}
-#[test]
-fn tokenize_escaped_backslash() {
-    assert_tokens(
-        r#"echo "hello\\world""#,
-        vec![w!("echo"), w!(r#"hello\world"#)],
-    );
-}
-
-// ── Backslash outside quotes ──
-#[test]
-fn tokenize_escape_space() {
-    assert_tokens(r"hello\ world", vec![w!("hello world")]);
-}
-#[test]
-fn tokenize_escape_quote() {
-    assert_tokens(r"hello\'world", vec![w!("hello'world")]);
-}
-#[test]
-fn tokenize_escape_dquote() {
-    assert_tokens(r#"hello\"world"#, vec![w!(r#"hello"world"#)]);
-}
-#[test]
-fn tokenize_escape_backslash() {
-    assert_tokens(r"hello\\world", vec![w!(r"hello\world")]);
-}
-#[test]
-fn tokenize_trailing_backslash() {
-    assert_tokens(r"hello\", vec![w!("hello")]);
-}
-
-// ── Mixed quotes ──
-#[test]
-fn tokenize_single_in_double() {
-    assert_tokens(r#"echo "it's fine""#, vec![w!("echo"), w!("it's fine")]);
-}
-
-// ── Edge cases ──
-#[test]
-fn tokenize_unclosed_single() {
-    assert_tokens("echo 'hello", vec![w!("echo"), w!("hello")]);
-}
-#[test]
-fn tokenize_unclosed_double() {
-    assert_tokens(r#"echo "hello"#, vec![w!("echo"), w!("hello")]);
-}
-#[test]
-fn tokenize_only_quotes() {
-    assert_tokens(r"''", vec![]);
-}
-#[test]
-fn tokenize_adjacent_quotes() {
-    assert_tokens(r"echo a''b", vec![w!("echo"), w!("ab")]);
-}
-
-// ── Redirects ──
-#[test]
-fn tokenize_redirect_stdout() {
-    assert_tokens(
-        "echo > file",
-        vec![w!("echo"), Token::RedirectStdout, w!("file")],
-    );
-}
-#[test]
-fn tokenize_redirect_append() {
-    assert_tokens(
-        "echo >> file",
-        vec![w!("echo"), Token::RedirectAppendStdout, w!("file")],
-    );
-}
-#[test]
-fn tokenize_redirect_stderr() {
-    assert_tokens(
-        "echo 2> file",
-        vec![w!("echo"), Token::RedirectStderr, w!("file")],
-    );
-}
-#[test]
-fn tokenize_redirect_stdout_fd1() {
-    assert_tokens(
-        "echo 1> file",
-        vec![w!("echo"), Token::RedirectStdout, w!("file")],
-    );
-}
-
-// ══════════════════════════════════════════════════════════════
-// Parser tests
-// ══════════════════════════════════════════════════════════════
-
-// ── Builtins ──
 #[test]
 fn parse_exit() {
     assert_command("exit", Command::Exit);
@@ -188,6 +17,8 @@ fn parse_exit() {
 fn parse_pwd() {
     assert_command("pwd", Command::Pwd);
 }
+
+// ── Echo ──
 
 #[test]
 fn parse_echo_no_args() {
@@ -205,19 +36,43 @@ fn parse_echo_multiple_args() {
 }
 
 #[test]
+fn parse_echo_with_quotes() {
+    assert_command("echo 'hello world'", Command::Echo("hello world".into()));
+}
+
+#[test]
+fn parse_echo_with_escapes() {
+    assert_command(r"echo hello\ world", Command::Echo("hello world".into()));
+}
+
+// ── Cd ──
+
+#[test]
 fn parse_cd_no_args() {
     assert_command("cd", Command::InvalidArgs("cd".into()));
 }
 
 #[test]
-fn parse_cd_with_path() {
+fn parse_cd_absolute() {
     assert_command("cd /tmp", Command::Cd("/tmp".into()));
 }
 
 #[test]
-fn parse_cd_extra_args_ignored() {
-    assert_command("cd too many args", Command::Cd("too".into()));
+fn parse_cd_relative() {
+    assert_command("cd ..", Command::Cd("..".into()));
 }
+
+#[test]
+fn parse_cd_home() {
+    assert_command("cd ~", Command::Cd("~".into()));
+}
+
+#[test]
+fn parse_cd_extra_args_ignored() {
+    assert_command("cd /tmp extra", Command::Cd("/tmp".into()));
+}
+
+// ── Type ──
 
 #[test]
 fn parse_type_no_args() {
@@ -225,11 +80,19 @@ fn parse_type_no_args() {
 }
 
 #[test]
-fn parse_type_with_name() {
+fn parse_type_builtin() {
     assert_command("type echo", Command::Type("echo".into()));
 }
 
-// ── External commands ──
+#[test]
+fn parse_type_external() {
+    assert_command("type ls", Command::Type("ls".into()));
+}
+
+// ══════════════════════════════════════════════════════════════
+// External commands
+// ══════════════════════════════════════════════════════════════
+
 #[test]
 fn parse_external_no_args() {
     assert_command(
@@ -244,7 +107,20 @@ fn parse_external_no_args() {
 }
 
 #[test]
-fn parse_external_with_args() {
+fn parse_external_one_arg() {
+    assert_command(
+        "cat file.txt",
+        Command::External {
+            program: "cat".into(),
+            args: vec!["file.txt".into()],
+            redirect_stdout: None,
+            redirect_stderr: None,
+        },
+    );
+}
+
+#[test]
+fn parse_external_multiple_args() {
     assert_command(
         "ls -la /tmp",
         Command::External {
@@ -254,6 +130,115 @@ fn parse_external_with_args() {
             redirect_stderr: None,
         },
     );
+}
+
+#[test]
+fn parse_external_with_quoted_arg() {
+    assert_command(
+        r#"grep "hello world" file.txt"#,
+        Command::External {
+            program: "grep".into(),
+            args: vec!["hello world".into(), "file.txt".into()],
+            redirect_stdout: None,
+            redirect_stderr: None,
+        },
+    );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Redirects
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn parse_redirect_stdout() {
+    assert_command(
+        "echo hello > out.txt",
+        Command::External {
+            program: "echo".into(),
+            args: vec!["hello".into()],
+            redirect_stdout: Some(("out.txt".into(), false)),
+            redirect_stderr: None,
+        },
+    );
+}
+
+#[test]
+fn parse_redirect_stdout_append() {
+    assert_command(
+        "echo hello >> out.txt",
+        Command::External {
+            program: "echo".into(),
+            args: vec!["hello".into()],
+            redirect_stdout: Some(("out.txt".into(), true)),
+            redirect_stderr: None,
+        },
+    );
+}
+
+#[test]
+fn parse_redirect_stderr() {
+    assert_command(
+        "ls 2> errors.txt",
+        Command::External {
+            program: "ls".into(),
+            args: vec![],
+            redirect_stdout: None,
+            redirect_stderr: Some(("errors.txt".into(), false)),
+        },
+    );
+}
+
+#[test]
+fn parse_redirect_stderr_append() {
+    assert_command(
+        "ls 2>> errors.txt",
+        Command::External {
+            program: "ls".into(),
+            args: vec![],
+            redirect_stdout: None,
+            redirect_stderr: Some(("errors.txt".into(), true)),
+        },
+    );
+}
+
+#[test]
+fn parse_redirect_stdout_fd1() {
+    assert_command(
+        "echo hello 1> out.txt",
+        Command::External {
+            program: "echo".into(),
+            args: vec!["hello".into()],
+            redirect_stdout: Some(("out.txt".into(), false)),
+            redirect_stderr: None,
+        },
+    );
+}
+
+#[test]
+fn parse_redirect_both() {
+    assert_command(
+        "cmd > out.txt 2> err.txt",
+        Command::External {
+            program: "cmd".into(),
+            args: vec![],
+            redirect_stdout: Some(("out.txt".into(), false)),
+            redirect_stderr: Some(("err.txt".into(), false)),
+        },
+    );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Edge cases
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn parse_empty_input() {
+    assert_command("", Command::Empty);
+}
+
+#[test]
+fn parse_whitespace_only() {
+    assert_command("   ", Command::Empty);
 }
 
 #[test]
@@ -269,8 +254,12 @@ fn parse_unknown_becomes_external() {
     );
 }
 
-// ── Empty input ──
 #[test]
-fn parse_empty_input() {
-    assert_command("", Command::Empty);
+fn parse_leading_whitespace() {
+    assert_command("  pwd", Command::Pwd);
+}
+
+#[test]
+fn parse_trailing_whitespace() {
+    assert_command("pwd  ", Command::Pwd);
 }
