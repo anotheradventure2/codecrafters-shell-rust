@@ -1,7 +1,14 @@
 use std::{iter::Peekable, mem::take, str::Chars};
 
 #[derive(Debug, PartialEq)]
-pub enum Command {
+pub struct Command {
+    pub kind: CommandKind,
+    pub redirect_stdout: Option<(String, bool)>,
+    pub redirect_stderr: Option<(String, bool)>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CommandKind {
     Empty,
     Unknown(String),
     InvalidArgs(String),
@@ -10,12 +17,7 @@ pub enum Command {
     Cd(String),
     Echo(String),
     Type(String),
-    External {
-        program: String,
-        args: Vec<String>,
-        redirect_stdout: Option<(String, bool)>,
-        redirect_stderr: Option<(String, bool)>,
-    },
+    External { program: String, args: Vec<String> },
 }
 
 #[derive(Debug, PartialEq)]
@@ -36,16 +38,6 @@ impl Token {
                 | Token::RedirectAppendStdout
                 | Token::RedirectAppendStderr
         )
-    }
-
-    fn redirect_info(&self) -> Option<(bool, bool)> {
-        match self {
-            Token::RedirectStdout => Some((true, false)),
-            Token::RedirectAppendStdout => Some((true, true)),
-            Token::RedirectStderr => Some((false, false)),
-            Token::RedirectAppendStderr => Some((false, true)),
-            _ => None,
-        }
     }
 }
 
@@ -115,86 +107,81 @@ pub fn parse(input: &str) -> Command {
     debug!(&tokens);
 
     if tokens.is_empty() {
-        return Command::Empty;
+        return Command {
+            kind: CommandKind::Empty,
+            redirect_stdout: None,
+            redirect_stderr: None,
+        };
     }
 
-    // First Word is the command name
-    let (cmd_name, rest) = match &tokens[0] {
-        Token::Word(name) => (name.as_str(), &tokens[1..]),
-        _ => return Command::Empty,
+    let (words, redirect_stdout, redirect_stderr) = split_tokens(&tokens);
+
+    let cmd_name = match words.first() {
+        Some(name) => name.as_str(),
+        None => {
+            return Command {
+                kind: CommandKind::Empty,
+                redirect_stdout: None,
+                redirect_stderr: None,
+            };
+        }
     };
 
-    match cmd_name {
-        "exit" => return Command::Exit,
-        "pwd" => return Command::Pwd,
-        "echo" => {
-            return Command::Echo(words_from_tokens(rest.iter().collect()).join(" "));
-        }
-        "cd" => {
-            return match rest.first() {
-                Some(Token::Word(p)) => Command::Cd(p.to_string()),
-                _ => Command::InvalidArgs(input.to_string()),
-            };
-        }
-        "type" => {
-            return match rest.first() {
-                Some(Token::Word(n)) => Command::Type(n.to_string()),
-                _ => Command::InvalidArgs(input.to_string()),
-            };
-        }
-        _ => match parse_external(rest) {
-            Some(parts) => Command::External {
-                program: cmd_name.to_string(),
-                args: parts.args,
-                redirect_stdout: parts.redirect_stdout,
-                redirect_stderr: parts.redirect_stderr,
-            },
-            None => Command::InvalidArgs(input.to_string()),
+    let kind = match cmd_name {
+        "exit" => CommandKind::Exit,
+        "pwd" => CommandKind::Pwd,
+        "echo" => CommandKind::Echo(words[1..].join(" ")),
+        "cd" => match words.get(1) {
+            Some(path) => CommandKind::Cd(path.clone()),
+            None => CommandKind::InvalidArgs(input.to_string()),
         },
-    }
-}
-
-struct ExternalParts {
-    args: Vec<String>,
-    redirect_stdout: Option<(String, bool)>,
-    redirect_stderr: Option<(String, bool)>,
-}
-
-fn parse_external(tokens: &[Token]) -> Option<ExternalParts> {
-    let mut args = Vec::new();
-    let mut redirect = None;
-    let mut file = None;
-
-    for token in tokens {
-        match token {
-            Token::Word(w) if redirect.is_none() => args.push(w.clone()),
-            t if t.is_redirect() && redirect.is_none() => redirect = Some(t),
-            Token::Word(w) if redirect.is_some() && file.is_none() => file = Some(w.clone()),
-            _ => return None,
-        }
-    }
-
-    let (redirect_stdout, redirect_stderr) = match redirect.and_then(|r| r.redirect_info()) {
-        Some((true, append)) => (file.map(|f| (f, append)), None),
-        Some((false, append)) => (None, file.map(|f| (f, append))),
-        None => (None, None),
+        "type" => match words.get(1) {
+            Some(name) => CommandKind::Type(name.clone()),
+            None => CommandKind::InvalidArgs(input.to_string()),
+        },
+        _ => CommandKind::External {
+            program: cmd_name.to_string(),
+            args: words[1..].to_vec(),
+        },
     };
 
-    Some(ExternalParts {
-        args,
+    Command {
+        kind,
         redirect_stdout,
         redirect_stderr,
-    })
+    }
 }
 
-fn words_from_tokens(tokens: Vec<&Token>) -> Vec<String> {
-    tokens
-        .iter()
-        .filter_map(|t| match t {
-            Token::Word(w) => Some(w.clone()),
-            _ => None,
-        })
-        .collect()
+fn split_tokens(tokens: &[Token]) -> (Vec<String>, Option<(String, bool)>, Option<(String, bool)>) {
+    let mut words = Vec::new();
+    let mut redirect_stdout = None;
+    let mut redirect_stderr = None;
+    let mut i = 0;
+
+    while i < tokens.len() {
+        match &tokens[i] {
+            Token::Word(w) => {
+                words.push(w.clone());
+            }
+            Token::RedirectStdout | Token::RedirectAppendStdout => {
+                let append = matches!(tokens[i], Token::RedirectAppendStdout);
+                if let Some(Token::Word(file)) = tokens.get(i + 1) {
+                    redirect_stdout = Some((file.clone(), append));
+                    i += 1; // skip filename
+                }
+            }
+            Token::RedirectStderr | Token::RedirectAppendStderr => {
+                let append = matches!(tokens[i], Token::RedirectAppendStderr);
+                if let Some(Token::Word(file)) = tokens.get(i + 1) {
+                    redirect_stderr = Some((file.clone(), append));
+                    i += 1;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    (words, redirect_stdout, redirect_stderr)
 }
 
 fn finish_word(tokens: &mut Vec<Token>, word: &mut String) {
