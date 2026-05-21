@@ -31,12 +31,28 @@ impl Shell {
     }
 
     fn execute(&mut self, cmd: &Command) {
+        // Open redirect files eagerly — this guarantees the file is
+        // created/truncated even if the command produces no output.
+        let mut stdout_file = cmd
+            .redirect_stdout
+            .as_ref()
+            .map(|(file, append)| open_file(file, *append));
+        let mut stderr_file = cmd
+            .redirect_stderr
+            .as_ref()
+            .map(|(file, append)| open_file(file, *append));
+
         match &cmd.kind {
             CommandKind::Exit => std::process::exit(0),
-            CommandKind::Pwd => println!("{}", env::current_dir().unwrap().display()),
+            CommandKind::Pwd => {
+                if let Some(ref mut f) = stdout_file {
+                    writeln!(f, "{}", env::current_dir().unwrap().display()).unwrap();
+                } else {
+                    println!("{}", env::current_dir().unwrap().display());
+                }
+            }
             CommandKind::Echo(args) => {
-                if let Some((file, append)) = &cmd.redirect_stdout {
-                    let mut f = open_file(file, *append);
+                if let Some(ref mut f) = stdout_file {
                     writeln!(f, "{}", args).unwrap();
                 } else {
                     println!("{}", args);
@@ -58,11 +74,12 @@ impl Shell {
                 } else {
                     let mut command = std::process::Command::new(program);
                     command.args(args);
-                    if let Some((file, append)) = &cmd.redirect_stdout {
-                        command.stdout(open_file(file, *append));
+                    // .stdout()/.stderr() take ownership, so use .take()
+                    if let Some(f) = stdout_file.take() {
+                        command.stdout(f);
                     }
-                    if let Some((file, append)) = &cmd.redirect_stderr {
-                        command.stderr(open_file(file, *append));
+                    if let Some(f) = stderr_file.take() {
+                        command.stderr(f);
                     }
                     command
                         .spawn()
