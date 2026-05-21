@@ -1,8 +1,10 @@
 use crate::parser;
 use crate::parser::{Command, CommandKind};
 use crate::path;
+use std::fs::{File, OpenOptions};
 use std::{
     env,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -32,7 +34,14 @@ impl Shell {
         match &cmd.kind {
             CommandKind::Exit => std::process::exit(0),
             CommandKind::Pwd => println!("{}", env::current_dir().unwrap().display()),
-            CommandKind::Echo(args) => println!("{}", args),
+            CommandKind::Echo(args) => {
+                if let Some((file, append)) = &cmd.redirect_stdout {
+                    let mut f = open_file(file, *append);
+                    writeln!(f, "{}", args).unwrap();
+                } else {
+                    println!("{}", args);
+                }
+            }
             CommandKind::Type(name) => self.handle_type(name),
             CommandKind::Cd(path) => {
                 let target = self.resolve_path(&path);
@@ -44,8 +53,15 @@ impl Shell {
                 }
             }
             CommandKind::External { program, args } => {
-                std::process::Command::new(program)
-                    .args(args)
+                let mut command = std::process::Command::new(program);
+                command.args(args);
+                if let Some((file, append)) = &cmd.redirect_stdout {
+                    command.stdout(open_file(file, *append));
+                }
+                if let Some((file, append)) = &cmd.redirect_stderr {
+                    command.stderr(open_file(file, *append));
+                }
+                command
                     .spawn()
                     .expect("Failed to execute command")
                     .wait()
@@ -82,4 +98,14 @@ impl Shell {
             println!("{}: not found", name);
         }
     }
+}
+
+fn open_file(path: &str, append: bool) -> File {
+    OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(path)
+        .unwrap()
 }
