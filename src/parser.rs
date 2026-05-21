@@ -22,32 +22,8 @@ pub enum CommandKind {
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
-    Word(String), // regular word or quoted string
-    RedirectStdout,
-    RedirectStderr,
-    RedirectAppendStdout,
-    RedirectAppendStderr,
-}
-
-impl Token {
-    fn is_redirect(&self) -> bool {
-        matches!(
-            self,
-            Token::RedirectStdout
-                | Token::RedirectStderr
-                | Token::RedirectAppendStdout
-                | Token::RedirectAppendStderr
-        )
-    }
-}
-
-fn redirect_token(fd: char, append: bool) -> Token {
-    match (fd, append) {
-        ('1', false) => Token::RedirectStdout,
-        ('1', true) => Token::RedirectAppendStdout,
-        (_, false) => Token::RedirectStderr,
-        (_, true) => Token::RedirectAppendStderr,
-    }
+    Word(String),
+    Redirect { fd: u8, append: bool },
 }
 
 fn tokenize(input: &str) -> Vec<Token> {
@@ -75,22 +51,25 @@ fn tokenize(input: &str) -> Vec<Token> {
                     word.push(esc);
                 }
             }
-            // file descriptor if we're not currently building a word
+            // file descriptor redirect (e.g. 1>, 2>>)
             '1'..='2' if word.is_empty() => {
                 let fd = chars.next().unwrap();
-
                 if (chars.next_if_eq(&'>')).is_some() {
                     let append = (chars.next_if_eq(&'>')).is_some();
-                    tokens.push(redirect_token(fd, append));
+                    tokens.push(Token::Redirect {
+                        fd: fd.to_digit(10).unwrap() as u8,
+                        append,
+                    });
                 } else {
-                    chars.next();
+                    // not a redirect — treat digit as a regular word character
                     word.push(c);
                 }
             }
+            // stdout redirect without explicit fd (e.g. >, >>)
             '>' if word.is_empty() => {
                 chars.next();
                 let append = (chars.next_if_eq(&'>')).is_some();
-                tokens.push(redirect_token('1', append));
+                tokens.push(Token::Redirect { fd: 1, append });
             }
             _ => {
                 chars.next();
@@ -105,14 +84,6 @@ fn tokenize(input: &str) -> Vec<Token> {
 pub fn parse(input: &str) -> Command {
     let tokens = tokenize(input);
     debug!(&tokens);
-
-    if tokens.is_empty() {
-        return Command {
-            kind: CommandKind::Empty,
-            redirect_stdout: None,
-            redirect_stderr: None,
-        };
-    }
 
     let (words, redirect_stdout, redirect_stderr) = split_tokens(&tokens);
 
@@ -163,18 +134,15 @@ fn split_tokens(tokens: &[Token]) -> (Vec<String>, Option<(String, bool)>, Optio
             Token::Word(w) => {
                 words.push(w.clone());
             }
-            Token::RedirectStdout | Token::RedirectAppendStdout => {
-                let append = matches!(tokens[i], Token::RedirectAppendStdout);
+            Token::Redirect { fd, append } => {
                 if let Some(Token::Word(file)) = tokens.get(i + 1) {
-                    redirect_stdout = Some((file.clone(), append));
+                    let target = if *fd == 1 {
+                        &mut redirect_stdout
+                    } else {
+                        &mut redirect_stderr
+                    };
+                    *target = Some((file.clone(), *append));
                     i += 1; // skip filename
-                }
-            }
-            Token::RedirectStderr | Token::RedirectAppendStderr => {
-                let append = matches!(tokens[i], Token::RedirectAppendStderr);
-                if let Some(Token::Word(file)) = tokens.get(i + 1) {
-                    redirect_stderr = Some((file.clone(), append));
-                    i += 1;
                 }
             }
         }

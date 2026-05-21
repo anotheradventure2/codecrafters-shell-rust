@@ -1,5 +1,5 @@
 use crate::parser;
-use crate::parser::Command;
+use crate::parser::{Command, CommandKind};
 use crate::path;
 use std::{
     env,
@@ -29,12 +29,12 @@ impl Shell {
     }
 
     fn execute(&mut self, cmd: &Command) {
-        match cmd {
-            Command::Exit => std::process::exit(0),
-            Command::Pwd => println!("{}", env::current_dir().unwrap().display()),
-            Command::Echo(args) => println!("{}", args),
-            Command::Type(name) => self.handle_type(name),
-            Command::Cd(path) => {
+        match &cmd.kind {
+            CommandKind::Exit => std::process::exit(0),
+            CommandKind::Pwd => println!("{}", env::current_dir().unwrap().display()),
+            CommandKind::Echo(args) => println!("{}", args),
+            CommandKind::Type(name) => self.handle_type(name),
+            CommandKind::Cd(path) => {
                 let target = self.resolve_path(&path);
 
                 if target.is_dir() {
@@ -43,7 +43,7 @@ impl Shell {
                     println!("cd: {}: No such file or directory", target.display());
                 }
             }
-            Command::External { program, args, .. } => {
+            CommandKind::External { program, args } => {
                 std::process::Command::new(program)
                     .args(args)
                     .spawn()
@@ -51,9 +51,9 @@ impl Shell {
                     .wait()
                     .expect("failed to wait for command");
             }
-            Command::Empty => {}
-            Command::InvalidArgs(input) => println!("{} invalid arguments", input),
-            Command::Unknown(cmd) => println!("{}: command not found", cmd),
+            CommandKind::Empty => {}
+            CommandKind::InvalidArgs(input) => println!("{} invalid arguments", input),
+            CommandKind::Unknown(cmd) => println!("{}: command not found", cmd),
         }
     }
 
