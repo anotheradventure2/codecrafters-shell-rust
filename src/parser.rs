@@ -10,7 +10,6 @@ pub struct Command {
 #[derive(Debug, PartialEq)]
 pub enum CommandKind {
     Empty,
-    Unknown(String),
     InvalidArgs(String),
     Exit,
     Pwd,

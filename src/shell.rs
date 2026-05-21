@@ -53,23 +53,26 @@ impl Shell {
                 }
             }
             CommandKind::External { program, args } => {
-                let mut command = std::process::Command::new(program);
-                command.args(args);
-                if let Some((file, append)) = &cmd.redirect_stdout {
-                    command.stdout(open_file(file, *append));
+                if self.find_executable(program).is_none() {
+                    println!("{}: command not found", program);
+                } else {
+                    let mut command = std::process::Command::new(program);
+                    command.args(args);
+                    if let Some((file, append)) = &cmd.redirect_stdout {
+                        command.stdout(open_file(file, *append));
+                    }
+                    if let Some((file, append)) = &cmd.redirect_stderr {
+                        command.stderr(open_file(file, *append));
+                    }
+                    command
+                        .spawn()
+                        .expect("Failed to execute command")
+                        .wait()
+                        .expect("failed to wait for command");
                 }
-                if let Some((file, append)) = &cmd.redirect_stderr {
-                    command.stderr(open_file(file, *append));
-                }
-                command
-                    .spawn()
-                    .expect("Failed to execute command")
-                    .wait()
-                    .expect("failed to wait for command");
             }
             CommandKind::Empty => {}
             CommandKind::InvalidArgs(input) => println!("{} invalid arguments", input),
-            CommandKind::Unknown(cmd) => println!("{}: command not found", cmd),
         }
     }
 
