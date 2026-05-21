@@ -37,6 +37,25 @@ impl Token {
                 | Token::RedirectAppendStderr
         )
     }
+
+    fn redirect_info(&self) -> Option<(bool, bool)> {
+        match self {
+            Token::RedirectStdout => Some((true, false)),
+            Token::RedirectAppendStdout => Some((true, true)),
+            Token::RedirectStderr => Some((false, false)),
+            Token::RedirectAppendStderr => Some((false, true)),
+            _ => None,
+        }
+    }
+}
+
+fn redirect_token(fd: char, append: bool) -> Token {
+    match (fd, append) {
+        ('1', false) => Token::RedirectStdout,
+        ('1', true) => Token::RedirectAppendStdout,
+        (_, false) => Token::RedirectStderr,
+        (_, true) => Token::RedirectAppendStderr,
+    }
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
@@ -69,19 +88,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 let fd = chars.next().unwrap();
 
                 if (chars.next_if_eq(&'>')).is_some() {
-                    if (chars.next_if_eq(&'>')).is_some() {
-                        tokens.push(if fd == '1' {
-                            Token::RedirectAppendStdout
-                        } else {
-                            Token::RedirectAppendStderr
-                        });
-                    } else {
-                        tokens.push(if fd == '1' {
-                            Token::RedirectStdout
-                        } else {
-                            Token::RedirectStderr
-                        });
-                    }
+                    let append = (chars.next_if_eq(&'>')).is_some();
+                    tokens.push(redirect_token(fd, append));
                 } else {
                     chars.next();
                     word.push(c);
@@ -89,12 +97,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
             '>' if word.is_empty() => {
                 chars.next();
-
-                if (chars.next_if_eq(&'>')).is_some() {
-                    tokens.push(Token::RedirectAppendStdout);
-                } else {
-                    tokens.push(Token::RedirectStdout);
-                }
+                let append = (chars.next_if_eq(&'>')).is_some();
+                tokens.push(redirect_token('1', append));
             }
             _ => {
                 chars.next();
@@ -124,7 +128,7 @@ pub fn parse(input: &str) -> Command {
         "exit" => return Command::Exit,
         "pwd" => return Command::Pwd,
         "echo" => {
-            return Command::Echo(words_from_tokens(tokens.iter().collect()).join(" "));
+            return Command::Echo(words_from_tokens(rest.iter().collect()).join(" "));
         }
         "cd" => {
             return match rest.first() {
@@ -149,16 +153,10 @@ pub fn parse(input: &str) -> Command {
                 _ => None,
             });
 
-            let (redirect_stdout, redirect_stderr) = match redirect {
-                Some(Token::RedirectStdout) | Some(Token::RedirectAppendStdout) => {
-                    let append = matches!(redirect, Some(Token::RedirectAppendStdout));
-                    (filename.map(|f| (f, append)), None)
-                }
-                Some(Token::RedirectStderr) | Some(Token::RedirectAppendStderr) => {
-                    let append = matches!(redirect, Some(Token::RedirectAppendStderr));
-                    (None, filename.map(|f| (f, append)))
-                }
-                Some(_) => return Command::InvalidArgs(input.to_string()),
+            let (redirect_stdout, redirect_stderr) = match redirect.and_then(|r| r.redirect_info())
+            {
+                Some((true, append)) => (filename.map(|f| (f, append)), None),
+                Some((false, append)) => (None, filename.map(|f| (f, append))),
                 None => (None, None),
             };
 
