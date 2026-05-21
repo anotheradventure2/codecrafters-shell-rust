@@ -10,17 +10,25 @@ pub enum Command {
     Cd(String),
     Echo(String),
     Type(String),
-    External(String, Vec<String>),
+    External {
+        program: String,
+        args: Vec<String>,
+        redirect_stdout: Option<(String, bool)>,
+        redirect_stderr: Option<(String, bool)>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
-    Word(String),         // regular word or quoted string
-    RedirectStdout,       // >
-    RedirectStdoutAppend, // >>
-    RedirectStderr,       // 2>
-    RedirectStderrAppend, // 2>>
-    Pipe,
+    Word(String), // regular word or quoted string
+    Redirect(String),
+    RedirectAppend(String),
+}
+
+impl Token {
+    fn is_redirect(&self) -> bool {
+        matches!(self, Token::Redirect(_) | Token::RedirectAppend(_))
+    }
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
@@ -46,6 +54,30 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 if let Some(&esc) = chars.peek() {
                     chars.next();
                     word.push(esc);
+                }
+            }
+            // file descriptor if we're not currently building a word
+            '1'..='2' if word.is_empty() => {
+                let fd = chars.next().unwrap();
+
+                if (chars.next_if_eq(&'>')).is_some() {
+                    if (chars.next_if_eq(&'>')).is_some() {
+                        tokens.push(Token::RedirectAppend(fd.to_string()));
+                    } else {
+                        tokens.push(Token::Redirect(fd.to_string()));
+                    }
+                } else {
+                    chars.next();
+                    word.push(c);
+                }
+            }
+            '>' if word.is_empty() => {
+                chars.next();
+
+                if (chars.next_if_eq(&'>')).is_some() {
+                    tokens.push(Token::RedirectAppend("1".to_string()));
+                } else {
+                    tokens.push(Token::Redirect("1".to_string()));
                 }
             }
             _ => {
@@ -76,7 +108,7 @@ pub fn parse(input: &str) -> Command {
         "exit" => return Command::Exit,
         "pwd" => return Command::Pwd,
         "echo" => {
-            return Command::Echo(words_from_tokens(&tokens).join(" "));
+            return Command::Echo(words_from_tokens(tokens.iter().collect()).join(" "));
         }
         "cd" => {
             return match rest.first() {
@@ -91,12 +123,57 @@ pub fn parse(input: &str) -> Command {
             };
         }
         _ => {
-            return Command::External(cmd_name.to_string(), words_from_tokens(&tokens));
+            let (args, redirect, file) = match parse_external(rest) {
+                Some(result) => result,
+                None => return Command::InvalidArgs(input.to_string()),
+            };
+
+            let filename = file.and_then(|f| match f {
+                Token::Word(name) => Some(name.clone()),
+                _ => None,
+            });
+
+            let (redirect_stdout, redirect_stderr) = match redirect {
+                Some(Token::Redirect(fd)) | Some(Token::RedirectAppend(fd)) => {
+                    let append = matches!(redirect, Some(Token::RedirectAppend(_)));
+                    match fd.as_str() {
+                        "1" => (filename.map(|f| (f, append)), None),
+                        "2" => (None, filename.map(|f| (f, append))),
+                        _ => return Command::InvalidArgs(input.to_string()),
+                    }
+                }
+                Some(_) => return Command::InvalidArgs(input.to_string()),
+                None => (None, None),
+            };
+
+            return Command::External {
+                program: cmd_name.to_string(),
+                args: words_from_tokens(args),
+                redirect_stdout,
+                redirect_stderr,
+            };
         }
     }
 }
 
-fn words_from_tokens(tokens: &[Token]) -> Vec<String> {
+fn parse_external(tokens: &[Token]) -> Option<(Vec<&Token>, Option<&Token>, Option<&Token>)> {
+    let mut args = Vec::new();
+    let mut redirect = None;
+    let mut file = None;
+
+    for token in tokens {
+        match token {
+            Token::Word(_) if redirect.is_none() => args.push(token),
+            t if t.is_redirect() && redirect.is_none() => redirect = Some(t),
+            Token::Word(_) if redirect.is_some() && file.is_none() => file = Some(token),
+            _ => return Option::None,
+        }
+    }
+
+    Some((args, redirect, file))
+}
+
+fn words_from_tokens(tokens: Vec<&Token>) -> Vec<String> {
     tokens
         .iter()
         .filter_map(|t| match t {
@@ -256,5 +333,38 @@ mod tests {
     #[test]
     fn test_adjacent_quotes() {
         assert_tokens(r"echo a''b", vec![w!("echo"), w!("ab")]);
+    }
+
+    #[test]
+    fn test_redirect_stdout() {
+        assert_tokens(
+            "echo > file",
+            vec![w!("echo"), Token::Redirect("1".to_string()), w!("file")],
+        );
+    }
+    #[test]
+    fn test_redirect_append() {
+        assert_tokens(
+            "echo >> file",
+            vec![
+                w!("echo"),
+                Token::RedirectAppend("1".to_string()),
+                w!("file"),
+            ],
+        );
+    }
+    #[test]
+    fn test_redirect_stderr() {
+        assert_tokens(
+            "echo 2> file",
+            vec![w!("echo"), Token::Redirect("2".to_string()), w!("file")],
+        );
+    }
+    #[test]
+    fn test_redirect_stdout_fd1() {
+        assert_tokens(
+            "echo 1> file",
+            vec![w!("echo"), Token::Redirect("1".to_string()), w!("file")],
+        );
     }
 }
